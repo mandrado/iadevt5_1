@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString()
@@ -34,6 +34,18 @@ interface GeocodingApiResponse {
     country: string;
     admin1?: string;
   }>;
+}
+
+interface ReverseGeocodingResponse {
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    municipality?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+  };
 }
 
 interface WeatherApiResponse {
@@ -108,6 +120,39 @@ async function getCoordinates(city: string): Promise<GeocodingResult | null> {
   };
 }
 
+async function getLocationByCoordinates(latitude: number, longitude: number): Promise<GeocodingResult | null> {
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&accept-language=pt-BR`;
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'weather-panel/1.0',
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as ReverseGeocodingResponse;
+  const city =
+    data.address?.city ||
+    data.address?.town ||
+    data.address?.village ||
+    data.address?.municipality ||
+    data.address?.county;
+
+  if (!city) {
+    return null;
+  }
+
+  return {
+    name: city,
+    latitude,
+    longitude,
+    country: data.address?.country ?? '',
+    admin1: data.address?.state,
+  };
+}
+
 async function getWeather(latitude: number, longitude: number): Promise<WeatherData> {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day`;
   const response = await fetch(url);
@@ -136,9 +181,16 @@ app.get('/api/weather', async (req: Request, res: Response) => {
     if (lat && lon) {
       latitude = parseFloat(lat as string);
       longitude = parseFloat(lon as string);
-      cityName = 'Localização atual';
-      country = '';
-      region = undefined;
+
+      if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+        res.status(400).json({ error: 'Parâmetros lat/lon inválidos' });
+        return;
+      }
+
+      const location = await getLocationByCoordinates(latitude, longitude);
+      cityName = location?.name ?? 'Localização atual';
+      country = location?.country ?? '';
+      region = location?.admin1;
     } else if (city) {
       const coordinates = await getCoordinates(city as string);
 
@@ -181,7 +233,7 @@ app.get('/api/weather/description/:code', (req: Request, res: Response) => {
   res.json({ code, description });
 });
 
-app.use((err: Error, req: Request, res: Response, next: any) => {
+app.use((err: Error, _req: Request, res: Response, _next: any) => {
   console.error(err.stack);
   res.status(500).json({ 
     error: 'Something went wrong!',

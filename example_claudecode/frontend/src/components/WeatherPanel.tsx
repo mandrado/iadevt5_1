@@ -72,12 +72,14 @@ export function WeatherPanel() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [geoLoading, setGeoLoading] = useState(false)
+  const [geoMessage, setGeoMessage] = useState<string | null>(null)
 
   const fetchWeather = async (searchCity: string) => {
     if (!searchCity.trim()) return
 
     setLoading(true)
     setError(null)
+    setGeoMessage(null)
 
     try {
       const response = await fetch(
@@ -102,6 +104,7 @@ export function WeatherPanel() {
   const fetchWeatherByCoords = async (lat: number, lon: number) => {
     setLoading(true)
     setError(null)
+    setGeoMessage(null)
 
     try {
       const response = await fetch(
@@ -123,12 +126,13 @@ export function WeatherPanel() {
     }
   }
 
-  const handleGeolocation = () => {
+  const handleGeolocation = (showDeniedFeedback = true) => {
     if (!navigator.geolocation) {
-      setError('Geolocalização não suportada pelo navegador')
+      setGeoMessage('Geolocalização não suportada pelo navegador. Busque pelo nome da cidade.')
       return
     }
 
+    setGeoMessage(null)
     setGeoLoading(true)
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -137,7 +141,24 @@ export function WeatherPanel() {
       },
       (err) => {
         setGeoLoading(false)
-        setError('Não foi possível obter sua localização: ' + err.message)
+        if (err.code === err.PERMISSION_DENIED) {
+          if (showDeniedFeedback) {
+            setGeoMessage('Permissão de localização negada. Digite uma cidade ou habilite a localização no navegador.')
+          }
+          return
+        }
+
+        if (err.code === err.POSITION_UNAVAILABLE) {
+          setError('Localização indisponível no momento.')
+          return
+        }
+
+        if (err.code === err.TIMEOUT) {
+          setError('Tempo esgotado ao tentar obter sua localização.')
+          return
+        }
+
+        setError('Não foi possível obter sua localização.')
       }
     )
   }
@@ -148,7 +169,7 @@ export function WeatherPanel() {
   }
 
   useEffect(() => {
-    handleGeolocation()
+    handleGeolocation(true)
   }, [])
 
   const getWeatherIcon = (code: number, isDay: boolean) => {
@@ -180,7 +201,7 @@ export function WeatherPanel() {
       </form>
 
       <button
-        onClick={handleGeolocation}
+        onClick={() => handleGeolocation(true)}
         disabled={geoLoading}
         className="w-full mb-4 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-secondary/80 disabled:opacity-50 transition-colors text-sm"
       >
@@ -190,6 +211,12 @@ export function WeatherPanel() {
       {error && (
         <div className="p-3 mb-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
           {error}
+        </div>
+      )}
+
+      {geoMessage && (
+        <div className="p-3 mb-4 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-700 text-sm">
+          {geoMessage}
         </div>
       )}
 
